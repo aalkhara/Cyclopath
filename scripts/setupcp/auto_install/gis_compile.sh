@@ -104,12 +104,57 @@ function time_run () {
   $1
   time_1=$(date +%s.%N)
   TM_USED=`printf "%.2F" $(echo "($time_1 - $time_0) / 60.0" | bc -l)`
+  # Make this message noticeable when you're Shift-Paging through term output.
   echo
+  echo
+  echo
+  echo
+  echo
+  echo
+  echo
+  echo
+  echo
+  echo
+  echo
+  echo
+  echo "#################################################################"
+  echo "#################################################################"
+  echo "#################################################################"
+  echo "#################################################################"
+  echo "#################################################################"
+  echo "#################################################################"
+  echo "#################################################################"
+  echo "#################################################################"
+  echo "#################################################################"
+  echo "#################################################################"
+  echo "#################################################################"
   echo "#################################################################"
   echo
   echo "Ran $1 in ${TM_USED} mins."
   echo
   echo "#################################################################"
+  echo "#################################################################"
+  echo "#################################################################"
+  echo "#################################################################"
+  echo "#################################################################"
+  echo "#################################################################"
+  echo "#################################################################"
+  echo "#################################################################"
+  echo "#################################################################"
+  echo "#################################################################"
+  echo "#################################################################"
+  echo "#################################################################"
+  echo
+  echo
+  echo
+  echo
+  echo
+  echo
+  echo
+  echo
+  echo
+  echo
+  echo
   echo
 }
 
@@ -822,12 +867,19 @@ function setup_install_mapserver () {
     tar xvf mapserver-${MAPSERVER_VERS}.tar.gz \
       > /dev/null
 
-    pushd mapserver-${MAPSERVER_VERS} &> /dev/null
+    pushd /ccp/opt/.downloads/mapserver-${MAPSERVER_VERS} &> /dev/null
 
     # Fix the source file we mentioned earlier.
     SRCPATH="${SCRIPT_DIR}/../ao_templates/common/ccp/opt/.downloads/mapserver-${MAPSERVER_VERS}/mappostgis.c"
     if [[ ! -e ${SRCPATH} ]]; then
-      echo "FATAL: Could not locate .c fix. Your build will probably die without it."
+      echo "FATAL: Could not locate mappostgis.c fix. Your build will probably die without it."
+      exit 1
+    fi
+    /bin/cp -f ${SRCPATH} /ccp/opt/.downloads/mapserver-${MAPSERVER_VERS}
+    #
+    SRCPATH="${SCRIPT_DIR}/../ao_templates/common/ccp/opt/.downloads/mapserver-${MAPSERVER_VERS}/mapserver.h"
+    if [[ ! -e ${SRCPATH} ]]; then
+      echo "FATAL: Could not locate mapserver.h fix. Your build will probably die without it."
       exit 1
     fi
     /bin/cp -f ${SRCPATH} /ccp/opt/.downloads/mapserver-${MAPSERVER_VERS}
@@ -2126,23 +2178,33 @@ function gis_compile_main () {
   fi
 
   # 2016-07-18: 26 apps.
+  # Timing from Ubuntu 16.04 on runic.cs. 48 GB RAM and 24 core. But a slow drive.
 
+  # 2016-07-18: 10.27 mins.
   time_run setup_install_geos
 
+  # 2016-07-18: 1.30 mins.
   time_run setup_install_odbc
 
+  # 2016-07-18: 19.58 mins.
   time_run setup_install_gdal
 
+  # 2016-07-18: 2.24 mins.
   time_run setup_install_libxml2
 
+  # 2016-07-18: 0.96 mins.
   time_run setup_install_proj_4
 
+  # 2016-07-18: 0.19 mins.
   time_run setup_install_json_c
 
+  # 1.30 mins.
   time_run setup_install_postgis
 
+  # 0.00 mins. [no-op]
   time_run setup_install_xerces
 
+# Failed in 0.79 mins.
   time_run setup_install_mapserver
 
   time_run setup_install_tilecache
