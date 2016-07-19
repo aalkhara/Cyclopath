@@ -17,7 +17,6 @@ set -e
 
 #script_relbase=$(dirname $0)
 #script_absbase=`pwd $script_relbase`
-echo "SCRIPT_DIR=\$(dirname \$(readlink -f $0))"
 SCRIPT_DIR=$(dirname $(readlink -f $0))
 
 # SYNC_ME: This block of code is shared.
@@ -46,67 +45,73 @@ sudo -v
 
 # *** Prepare the transit cache.
 
-# Download and compile
+function download_and_compile_transit_cache () {
 
-compile_tx_data=0
-if ! [[ -e /scratch/$masterhost/ccp/var/transit/metc/minnesota.gdb ]]; then
-  compile_tx_data=1
-fi
-if [[ "$masterhost" == "$HOSTNAME" ]]; then
-  compile_tx_data=1
-fi
+  # Download and compile
 
-if [[ 0 -ne $compile_tx_data ]]; then
-
-  # Download the Met Council transit data.
-
-  # MAGIC_NUMBER/SYNC_ME: See: /ccp/dev/cp/pyserver/CONFIG|291|
-  #     transit_db_source: ftp://gisftp.metc.state.mn.us/google_transit.zip
-
-  echo -n "Downloading transit data... "
-  /bin/mkdir -p /ccp/var/transit/metc
-  cd /ccp/var/transit/metc
-  set +ex
-  wget_resp="`wget -N ftp://gisftp.metc.state.mn.us/google_transit.zip \
-              |& grep 'not retrieving.$'`"
-  set -e
-  echo "ok"
-  echo
-
-  # If wget wgot a new file, compile it. Otherwise, it should already be
-  # compiled.
-  if [[ -z "$wget_resp" || ! -e /ccp/var/transit/metc/minnesota.gdb ]]; then
-    echo -n "Compiling transit data... "
-    gs_gtfsdb_compile google_transit.zip minnesota.gtfsdb
-    gs_import_gtfs minnesota.gdb minnesota.gtfsdb
-    # Fix permissions.
-    sudo chmod 664 /ccp/var/transit/metc/*.*
-    # To test:
-    #       gs_gdb_inspect minnesota.gdb sta-3622
-    echo "ok"
-  echo
+  compile_tx_data=0
+  #if ! [[ -e /scratch/$masterhost/ccp/var/transit/metc/minnesota.gdb ]]; then
+  if ! [[ -e /ccp/var/transit/metc/minnesota.gdb ]]; then
+    compile_tx_data=1
+  fi
+  if [[ "$masterhost" == "$HOSTNAME" ]]; then
+    compile_tx_data=1
   fi
 
-else
+  if [[ 0 -ne $compile_tx_data ]]; then
 
-  # Rather than compile the transit data, just copy from the master host.
+    # Download the Met Council transit data.
 
-  /bin/cp -f /scratch/$masterhost/ccp/var/transit/metc/minnesota.gdb \
-    /ccp/var/transit/metc/minnesota.gdb
+    # MAGIC_NUMBER/SYNC_ME: See: /ccp/dev/cp/pyserver/CONFIG|291|
+    #     transit_db_source: ftp://gisftp.metc.state.mn.us/google_transit.zip
 
-  /bin/cp -f /scratch/$masterhost/ccp/var/transit/metc/minnesota.gtfsdb \
-    /ccp/var/transit/metc/minnesota.gtfsdb
+    echo -n "Downloading transit data... "
+    /bin/mkdir -p /ccp/var/transit/metc
+    cd /ccp/var/transit/metc
+    set +ex
+    wget_resp="`wget -N ftp://gisftp.metc.state.mn.us/google_transit.zip \
+                |& grep 'not retrieving.$'`"
+    set -e
+    echo "ok"
+    echo
 
-  /bin/cp -f /scratch/$masterhost/ccp/var/transit/metc/google_transit.zip \
-    /ccp/var/transit/metc/google_transit.zip
+    # If wget wgot a new file, compile it. Otherwise, it should already be
+    # compiled.
+    if [[ -z "$wget_resp" || ! -e /ccp/var/transit/metc/minnesota.gdb ]]; then
+      echo -n "Compiling transit data... "
+      gs_gtfsdb_compile google_transit.zip minnesota.gtfsdb
+      gs_import_gtfs minnesota.gdb minnesota.gtfsdb
+      # Fix permissions.
+      sudo chmod 664 /ccp/var/transit/metc/*.*
+      # To test:
+      #       gs_gdb_inspect minnesota.gdb sta-3622
+      echo "ok"
+    echo
+    fi
 
-fi
+  else
 
-# Share rights with www-data, so it can update the transit database, too.
+    # Rather than compile the transit data, just copy from the master host.
 
-# This isn't necessary in CcpV2, is it, because the branch maintainer's account
-# does the update and not the www-data user?
-# Not needed?: /bin/sudo chmod 666 /ccp/var/transit/metc/*.*
+    /bin/cp -f /scratch/$masterhost/ccp/var/transit/metc/minnesota.gdb \
+      /ccp/var/transit/metc/minnesota.gdb
+
+    /bin/cp -f /scratch/$masterhost/ccp/var/transit/metc/minnesota.gtfsdb \
+      /ccp/var/transit/metc/minnesota.gtfsdb
+
+    /bin/cp -f /scratch/$masterhost/ccp/var/transit/metc/google_transit.zip \
+      /ccp/var/transit/metc/google_transit.zip
+
+  fi
+
+  # Share rights with www-data, so it can update the transit database, too.
+
+  # This isn't necessary in CcpV2, is it, because the branch maintainer's account
+  # does the update and not the www-data user?
+  # Not needed?: /bin/sudo chmod 666 /ccp/var/transit/metc/*.*
+
+} # end: download_and_compile_transit_cache
+download_and_compile_transit_cache
 
 # *** Download and setup the sources
 
@@ -162,7 +167,7 @@ remake () {
   # FIXME: Add wincopy behavior (from flashclient/Makefile)
   return $success
 }
-#
+
 remake-pdf () {
   killfc
   sleep 1
@@ -295,7 +300,7 @@ ccp_setup_branch () {
     --define=SSEC_UUID="`uuidgen`"
     --define=MACHINE_IP=$MACHINE_IP
     --define=HTTPD_PORT_NUM=$httpd_port_num
-    --define=INSTANCE_BRANCH_LIST="'$instance_br_list'"
+    --define=INSTANCE_BRANCH_LIST="\'$instance_br_list\'"
     "
 
   # ... pyserver/
@@ -742,160 +747,165 @@ CCP_DEV_TRUNK="trunk"
 #CCP_DEV_TARGET="ccp_working"
 #CCP_DEV_TRUNK="ccp_trunk"
 
-# Whatever database dump we'll load must be on a local hard drive.
-# Verify or find it.
-if [[ $MACHINE_DOMAIN == "cs.umn.edu" ]]; then
-  if [[ $isprodserver -eq 0 ]]; then
-    CCPV3_DDUMP="ccpv3_lite.dump"
-  else
-    # Production server.
-    CCPV3_DDUMP="ccpv3_full.dump"
-  fi
-  if [[ ! -e /ccp/var/dbdumps/${CCPV3_DDUMP} ]]; then
-    # See if the dump is on another machine.
-    if [[ "$masterhost" != "$HOSTNAME" ]]; then
-      /bin/cp /scratch/$masterhost/ccp/var/dbdumps/${CCPV3_DDUMP} \
-        /ccp/var/dbdumps/${CCPV3_DDUMP}
+function load_database_dump () {
+
+  # Whatever database dump we'll load must be on a local hard drive.
+  # Verify or find it.
+  if [[ $MACHINE_DOMAIN == "cs.umn.edu" ]]; then
+    if [[ $isprodserver -eq 0 ]]; then
+      CCPV3_DDUMP="ccpv3_lite.dump"
     else
-      # Is this a warning? We can still dwnld schema, base data, and Shapefile.
-      echo
-      echo "MAYBE: Cannot locate database to load: ${CCPV3_DDUMP}"
-      echo
+      # Production server.
+      CCPV3_DDUMP="ccpv3_full.dump"
     fi
-  fi
-else
-  # This is an offline developer.
-  if [[ ! -e /ccp/var/dbdumps/${CCPV3_DDUMP} ]]; then
-    # See if the dump is available online.
-    if [[ -n $USE_DATABASE_SCP ]]; then
-      # E.g., CCPV3_DDUMP="ccpv3_anon.dump"
-      CCPV3_DDUMP=$(basename $USE_DATABASE_SCP)
-      scp $USE_DATABASE_SCP /ccp/var/dbdumps/${CCPV3_DDUMP}
-    else
-      # Is this a warning? We can still dwnld schema, base data, and Shapefile.
-      echo
-      echo "MAYBE: Please specify database to load using USE_DATABASE_SCP"
-      echo
-    fi
-  fi
-fi
-if [[ -z ${CCPV3_DDUMP} ]]; then
-  # Use a fake name to keep ccp_setup_branch happy.
-  CCPV3_DDUMP="ccpv3_anon.dump"
-fi
-
-if [[ ! -e /ccp/var/dbdumps/${CCPV3_DDUMP} ]]; then
-
-  echo
-  echo "WARNING/FIXME: This a community dev install and there's no ready db."
-  echo "               We can at least load the schema and base data."
-  echo "               Implement me: Download and import Shapefile."
-  echo
-
-  # See: http://mediawiki/index.php/Tech:Source_Code
-
-  # Note that dir_prepare.sh downloads
-  #  http://cycloplan.cyclopath.org/exports/devs/minnesota.dem
-  #  to /ccp/var/elevation/minnesota.dem
-
-  # Huh. I guess trying to use -O with -N doesn't work.
-  #  wget -N -O /ccp/var/dbdumps/schema.sql \
-  #    http://cycloplan.cyclopath.org/exports/devs/schema.sql
-  #  wget -N -O /ccp/var/dbdumps/data.sql \
-  #    http://cycloplan.cyclopath.org/exports/devs/data.sql
-  pushd /ccp/var/dbdumps
-  wget -N http://cycloplan.cyclopath.org/exports/devs/schema.sql
-  wget -N http://cycloplan.cyclopath.org/exports/devs/data.sql
-  popd
-
-  if [[ -e /ccp/var/dbdumps/schema.sql \
-     && -e /ccp/var/dbdumps/data.sql ]]; then
-    # http://stackoverflow.com/questions/14549270/
-    #  check-if-database-exists-in-postgresql-using-shell
-    if ! psql --no-psqlrc -U cycling -lqt | cut -d \| -f 1 \
-         | grep -w ${CCP_DEV_TARGET};
-      then
-
-# FIXME: This is wrong. We need to use the postgis import script, eh?
-
-      createdb -U postgres -e --template template0 ${CCP_DEV_TARGET}
-      psql --no-psqlrc -U cycling ${CCP_DEV_TARGET} \
-        < /ccp/var/dbdumps/schema.sql
-      # Run as psql superuser to avoid, e.g., ERROR:permission denied:
-      #              "RI_ConstraintTrigger_22528" is a system trigger
-      psql --no-psqlrc -U postgres ${CCP_DEV_TARGET} \
-        < /ccp/var/dbdumps/data.sql
-    else
-      echo "The database, ${CCP_DEV_TARGET}, exists and will not be overwrit."
+    if [[ ! -e /ccp/var/dbdumps/${CCPV3_DDUMP} ]]; then
+      # See if the dump is on another machine.
+      if [[ "$masterhost" != "$HOSTNAME" ]]; then
+        /bin/cp /scratch/$masterhost/ccp/var/dbdumps/${CCPV3_DDUMP} \
+          /ccp/var/dbdumps/${CCPV3_DDUMP}
+      else
+        # Is this a warning? We can still dwnld schema, base data, and Shapefile.
+        echo
+        echo "MAYBE: Cannot locate database to load: ${CCPV3_DDUMP}"
+        echo
+      fi
     fi
   else
-    echo
-    echo "ERROR: Could not download schema.sql and/or data.sql."
-    echo
+    # This is an offline developer.
+    if [[ ! -e /ccp/var/dbdumps/${CCPV3_DDUMP} ]]; then
+      # See if the dump is available online.
+      if [[ -n $USE_DATABASE_SCP ]]; then
+        # E.g., CCPV3_DDUMP="ccpv3_anon.dump"
+        CCPV3_DDUMP=$(basename $USE_DATABASE_SCP)
+        scp $USE_DATABASE_SCP /ccp/var/dbdumps/${CCPV3_DDUMP}
+      else
+        # Is this a warning? We can still dwnld schema, base data, and Shapefile.
+        echo
+        echo "MAYBE: Please specify database to load using USE_DATABASE_SCP"
+        echo
+      fi
+    fi
   fi
-  # FIXME: Download and import Shapefile of Hennepin County.
-  # FIXME: Run make_new_branch.py to make user arbiter
-  #        and maybe add a new branch and download
-  #        Ramsey to that to show working with branches.
-
-fi
-
-if true; then
-
-  # During a fresh OS install, cp might be mapped to a working dir somewhere.
-  if [[ ! -e /ccp/dev/cp && ! -L /ccp/dev/cp ]]; then
-    ln -s /ccp/dev/${CCP_DEV_TARGET} /ccp/dev/cp
-  # else, it's up to you, the dev, to fix the /ccp/dev/cp link.
-  fi
-
-  # NOTE: The bash -e test resolves the symlink, so it returns false if the
-  #       symlink links a nonexistant file or folder. To avoid this problem,
-  #       the -L (also -h) test checks if the file is a symlink.
-  if [[ ! -e /ccp/dev/cp_cron && ! -L /ccp/dev/cp_cron ]]; then
-    ln -s /ccp/dev/${CCP_DEV_TARGET} /ccp/dev/cp_cron
-  fi
-  #if [[ ! -e /ccp/dev/ccpv3_trunk && ! -L /ccp/dev/ccpv3_trunk ]]; then
-  #  ln -s /ccp/dev/${CCP_DEV_TARGET} /ccp/dev/ccpv3_trunk
-  #fi
-
-  if [[ -z $CHECK_CACHES_BR_LIST ]]; then
-    echo
-    echo "WARNING: CHECK_CACHES_BR_LIST not set; guessing."
-    echo
-    CHECK_CACHES_BR_LIST="\"minnesota\" \"Minnesota\""
+  if [[ -z ${CCPV3_DDUMP} ]]; then
+    # Use a fake name to keep ccp_setup_branch happy.
+    CCPV3_DDUMP="ccpv3_anon.dump"
   fi
 
-  # Now setup the branch.
-  checkout_path="${CCP_DEV_TARGET}"
-  httpd_host_alias="ccp"
-  httpd_port_num="80"
-  checkout_from="${CCPV3_SVN_TRUNK}"
-  checkout_dump="${CCPV3_DDUMP}"
-  do_load_dbase=1
-  instance_br_list="${CHECK_CACHES_BR_LIST}"
-  echo "Setting up main source code branch..."
-  ccp_setup_branch \
-    "${checkout_path}" \
-    "${httpd_host_alias}" \
-    "${httpd_port_num}" \
-    "${checkout_from}" \
-    "${checkout_dump}" \
-    "${do_load_dbase}" \
-    "${instance_br_list}"
+  if [[ ! -e /ccp/var/dbdumps/${CCPV3_DDUMP} ]]; then
 
-  echo "Installing maintenance apache conf."
-  # SYNC_ME: Search: Apache maintenance conf.
-  system_file_diff_n_replace "etc/apache2/sites-available" \
-    "maintenance" "maintenance" "${CCP_DEV_TARGET}" \
-    "--define=HTTPD_PORT_NUM=80"
+    echo
+    echo "WARNING/FIXME: This a community dev install and there's no ready db."
+    echo "               We can at least load the schema and base data."
+    echo "               Implement me: Download and import Shapefile."
+    echo
 
-  echo "Removing svn directory from /ccp/dev/working."
-  # We'll have two dirs: ccp_working and ccp_trunk.
-  /bin/cp -rf /ccp/dev/${CCP_DEV_TARGET} /ccp/dev/${CCP_DEV_TRUNK}
-  # Remove svn directories from the working directory.
-  /bin/rm -rf /ccp/dev/${CCP_DEV_TARGET}/.svn
+    # See: http://mediawiki/index.php/Tech:Source_Code
 
-fi
+    # Note that dir_prepare.sh downloads
+    #  http://cycloplan.cyclopath.org/exports/devs/minnesota.dem
+    #  to /ccp/var/elevation/minnesota.dem
+
+    # Huh. I guess trying to use -O with -N doesn't work.
+    #  wget -N -O /ccp/var/dbdumps/schema.sql \
+    #    http://cycloplan.cyclopath.org/exports/devs/schema.sql
+    #  wget -N -O /ccp/var/dbdumps/data.sql \
+    #    http://cycloplan.cyclopath.org/exports/devs/data.sql
+    pushd /ccp/var/dbdumps
+    wget -N http://cycloplan.cyclopath.org/exports/devs/schema.sql
+    wget -N http://cycloplan.cyclopath.org/exports/devs/data.sql
+    popd
+
+    if [[ -e /ccp/var/dbdumps/schema.sql \
+       && -e /ccp/var/dbdumps/data.sql ]]; then
+      # http://stackoverflow.com/questions/14549270/
+      #  check-if-database-exists-in-postgresql-using-shell
+      if ! psql --no-psqlrc -U cycling -lqt | cut -d \| -f 1 \
+           | grep -w ${CCP_DEV_TARGET};
+        then
+
+  # FIXME: This is wrong. We need to use the postgis import script, eh?
+
+        createdb -U postgres -e --template template0 ${CCP_DEV_TARGET}
+        psql --no-psqlrc -U cycling ${CCP_DEV_TARGET} \
+          < /ccp/var/dbdumps/schema.sql
+        # Run as psql superuser to avoid, e.g., ERROR:permission denied:
+        #              "RI_ConstraintTrigger_22528" is a system trigger
+        psql --no-psqlrc -U postgres ${CCP_DEV_TARGET} \
+          < /ccp/var/dbdumps/data.sql
+      else
+        echo "The database, ${CCP_DEV_TARGET}, exists and will not be overwrit."
+      fi
+    else
+      echo
+      echo "ERROR: Could not download schema.sql and/or data.sql."
+      echo
+    fi
+    # FIXME: Download and import Shapefile of Hennepin County.
+    # FIXME: Run make_new_branch.py to make user arbiter
+    #        and maybe add a new branch and download
+    #        Ramsey to that to show working with branches.
+
+  fi
+
+  if true; then
+
+    # During a fresh OS install, cp might be mapped to a working dir somewhere.
+    if [[ ! -e /ccp/dev/cp && ! -L /ccp/dev/cp ]]; then
+      ln -s /ccp/dev/${CCP_DEV_TARGET} /ccp/dev/cp
+    # else, it's up to you, the dev, to fix the /ccp/dev/cp link.
+    fi
+
+    # NOTE: The bash -e test resolves the symlink, so it returns false if the
+    #       symlink links a nonexistant file or folder. To avoid this problem,
+    #       the -L (also -h) test checks if the file is a symlink.
+    if [[ ! -e /ccp/dev/cp_cron && ! -L /ccp/dev/cp_cron ]]; then
+      ln -s /ccp/dev/${CCP_DEV_TARGET} /ccp/dev/cp_cron
+    fi
+    #if [[ ! -e /ccp/dev/ccpv3_trunk && ! -L /ccp/dev/ccpv3_trunk ]]; then
+    #  ln -s /ccp/dev/${CCP_DEV_TARGET} /ccp/dev/ccpv3_trunk
+    #fi
+
+    if [[ -z $CHECK_CACHES_BR_LIST ]]; then
+      echo
+      echo "WARNING: CHECK_CACHES_BR_LIST not set; guessing."
+      echo
+      CHECK_CACHES_BR_LIST="\"minnesota\" \"Minnesota\""
+    fi
+
+    # Now setup the branch.
+    checkout_path="${CCP_DEV_TARGET}"
+    httpd_host_alias="ccp"
+    httpd_port_num="80"
+    checkout_from="${CCPV3_SVN_TRUNK}"
+    checkout_dump="${CCPV3_DDUMP}"
+    do_load_dbase=1
+    instance_br_list="${CHECK_CACHES_BR_LIST}"
+    echo "Setting up main source code branch..."
+    ccp_setup_branch \
+      "${checkout_path}" \
+      "${httpd_host_alias}" \
+      "${httpd_port_num}" \
+      "${checkout_from}" \
+      "${checkout_dump}" \
+      "${do_load_dbase}" \
+      "${instance_br_list}"
+
+    echo "Installing maintenance apache conf."
+    # SYNC_ME: Search: Apache maintenance conf.
+    system_file_diff_n_replace "etc/apache2/sites-available" \
+      "maintenance" "maintenance" "${CCP_DEV_TARGET}" \
+      "--define=HTTPD_PORT_NUM=80"
+
+    echo "Removing svn directory from /ccp/dev/working."
+    # We'll have two dirs: ccp_working and ccp_trunk.
+    /bin/cp -rf /ccp/dev/${CCP_DEV_TARGET} /ccp/dev/${CCP_DEV_TRUNK}
+    # Remove svn directories from the working directory.
+    /bin/rm -rf /ccp/dev/${CCP_DEV_TARGET}/.svn
+
+  fi
+
+} # end: load_database_dump
+load_database_dump
 
 echo "Reloading Apache..."
 
@@ -911,244 +921,264 @@ ccp_apache_reload
 #
 #
 
-# FIXME: What about tiles on the guest machine?
-# FIXME: What about the route finder and Mr. Do!?
-#         Just tell the user to start them as needed?
-#        Not quite the killer app...
-#        I think you need to load the Mpls city export
-#         and then the memory usage won't be so demanding,
-#         and adding mr do and cyclopath to /etc/init.d
-#         will be okay, and the startup time will be
-#         30 seconds, right? =)
+function build_all_the_tiles () {
 
-# *** Build all of the tiles.
+  # FIXME: What about tiles on the guest machine?
+  # FIXME: What about the route finder and Mr. Do!?
+  #         Just tell the user to start them as needed?
+  #        Not quite the killer app...
+  #        I think you need to load the Mpls city export
+  #         and then the memory usage won't be so demanding,
+  #         and adding mr do and cyclopath to /etc/init.d
+  #         will be okay, and the startup time will be
+  #         30 seconds, right? =)
 
-# FIXME: CcpV3: The tile cache path is based on branch ID in the database dump.
+  # *** Build all of the tiles.
 
-if [[ "$masterhost" != "$HOSTNAME" ]]; then
+  # FIXME: CcpV3: The tile cache path is based on branch ID in the database dump.
 
-  if ! [[ -d /ccp/var/tilecache-cache/minnesota/00 ]]; then
+  if [[ "$masterhost" != "$HOSTNAME" ]]; then
 
-    echo -n "Copying tiles... "
+    if ! [[ -d /ccp/var/tilecache-cache/minnesota/00 ]]; then
 
-    sudo chown -R $USER /ccp/var/tilecache-cache/
-    sudo chgrp -R $targetgroup /ccp/var/tilecache-cache/
-    /bin/rm -rf /ccp/var/tilecache-cache/minnesota
-    /bin/cp -rf /scratch/$masterhost/ccp/var/tilecache-cache/minnesota \
-      /ccp/var/tilecache-cache
-    # Apache owns the tilecache cache.
-    sudo chown -R $httpd_user /ccp/var/tilecache-cache/
-    sudo chgrp -R $httpd_user /ccp/var/tilecache-cache/
+      echo -n "Copying tiles... "
+
+      sudo chown -R $USER /ccp/var/tilecache-cache/
+      sudo chgrp -R $targetgroup /ccp/var/tilecache-cache/
+      /bin/rm -rf /ccp/var/tilecache-cache/minnesota
+      /bin/cp -rf /scratch/$masterhost/ccp/var/tilecache-cache/minnesota \
+        /ccp/var/tilecache-cache
+      # Apache owns the tilecache cache.
+      sudo chown -R $httpd_user /ccp/var/tilecache-cache/
+      sudo chgrp -R $httpd_user /ccp/var/tilecache-cache/
+
+    fi
 
   fi
 
-fi
+  # else, FIXME: Tell user to build tiles, or download them from server?
 
-# else, FIXME: Tell user to build tiles, or download them from server?
+  # It takes too long to build tiles, so don't do it here. We'll schedule the
+  # cron job to do it.
+  #
+  # else
+  #   if [[ 0 -ne $reload_databases ]]; then
+  #     echo -n "Building tiles... "
+  #     cd /ccp/dev/cp/mapserver
+  #      sudo -u $httpd_user \
+  #        INSTANCE=minnesota \
+  #        PYTHONPATH=$ccp_python_path \
+  #        PYSERVER_HOME=/ccp/dev/cp/pyserver \
+  #        ./tilecache_update.py --all --branch -1 --zoom 9 15 --skin bikeways
+  #     echo "ok"
+  #   fi
+  # fi
 
-# It takes too long to build tiles, so don't do it here. We'll schedule the
-# cron job to do it.
-#
-# else
-#   if [[ 0 -ne $reload_databases ]]; then
-#     echo -n "Building tiles... "
-#     cd /ccp/dev/cp/mapserver
-#      sudo -u $httpd_user \
-#        INSTANCE=minnesota \
-#        PYTHONPATH=$ccp_python_path \
-#        PYSERVER_HOME=/ccp/dev/cp/pyserver \
-#        ./tilecache_update.py --all --branch -1 --zoom 9 15 --skin bikeways
-#     echo "ok"
-#   fi
-# fi
+} # end: build_all_the_tiles
+build_all_the_tiles
 
 # *** Install cronjobs.
 
-if [[ $MACHINE_DOMAIN == "cs.umn.edu" ]]; then
+function install_cronjobs () {
 
-  echo -n "Installing cron jobs... "
+  if [[ $MACHINE_DOMAIN == "cs.umn.edu" ]]; then
 
-  # FIXME: Make all RANDOM_NAME use uuidgen
-  RANDOM_NAME="`uuidgen`"
-  RANDOM_NAME=/tmp/ccp_setup_cron_$RANDOM_NAME
-  mkdir $RANDOM_NAME
+    echo -n "Installing cron jobs... "
 
-  if [[ $isbranchmgr -ne 0 ]]; then
-    m4 \
-      $ccp_m4_defines \
-      ${AO_TEMPLATE_BASE}/${CCPDEV_PSQL_TARGET}/etc/cron.d/crontab.USER \
-      > $RANDOM_NAME/crontab.USER
-      sudo crontab -u $targetuser $RANDOM_NAME/crontab.USER
+    # FIXME: Make all RANDOM_NAME use uuidgen
+    RANDOM_NAME="`uuidgen`"
+    RANDOM_NAME=/tmp/ccp_setup_cron_$RANDOM_NAME
+    mkdir $RANDOM_NAME
 
-  elif [[ $isprodserver -ne 0 ]]; then
+    if [[ $isbranchmgr -ne 0 ]]; then
+      m4 \
+        $ccp_m4_defines \
+        ${AO_TEMPLATE_BASE}/${CCPDEV_PSQL_TARGET}/etc/cron.d/crontab.USER \
+        > $RANDOM_NAME/crontab.USER
+        sudo crontab -u $targetuser $RANDOM_NAME/crontab.USER
 
-    m4 \
-      $ccp_m4_defines \
-      ${AO_TEMPLATE_BASE}/${CCPDEV_PSQL_TARGET}/etc/cron.d/crontab.PRODUCTION \
-      > $RANDOM_NAME/crontab.PRODUCTION
-      sudo crontab -u $targetuser $RANDOM_NAME/crontab.PRODUCTION
+    elif [[ $isprodserver -ne 0 ]]; then
+
+      m4 \
+        $ccp_m4_defines \
+        ${AO_TEMPLATE_BASE}/${CCPDEV_PSQL_TARGET}/etc/cron.d/crontab.PRODUCTION \
+        > $RANDOM_NAME/crontab.PRODUCTION
+        sudo crontab -u $targetuser $RANDOM_NAME/crontab.PRODUCTION
+
+    fi
+
+    # 2012.03.08: The root crontab just restarts apache daily. Skip it.
+    if false; then
+      m4 \
+        $ccp_m4_defines \
+        ${AO_TEMPLATE_BASE}/${CCPDEV_PSQL_TARGET}/etc/cron.d/crontab.root \
+        > $RANDOM_NAME/crontab.root
+        sudo crontab -u root $RANDOM_NAME/crontab.root
+    fi
+
+    # Install the www-data cron, which calls check_cache_now.sh every minute.
+
+    # NOTE: Not configuring on dev machines. Just branch-mgr and production.
+    if [[ $isbranchmgr -ne 0 || $isprodserver -ne 0 ]]; then
+      m4 \
+        $ccp_m4_defines \
+        ${AO_TEMPLATE_BASE}/${CCPDEV_PSQL_TARGET}/etc/cron.d/crontab.www-data \
+          > $RANDOM_NAME/crontab.www-data
+        sudo crontab -u www-data $RANDOM_NAME/crontab.www-data
+    fi
+
+    # Cleanup.
+    /bin/rm -rf $RANDOM_NAME
+
+    echo "ok"
 
   fi
 
-  # 2012.03.08: The root crontab just restarts apache daily. Skip it.
-  if false; then
-    m4 \
-      $ccp_m4_defines \
-      ${AO_TEMPLATE_BASE}/${CCPDEV_PSQL_TARGET}/etc/cron.d/crontab.root \
-      > $RANDOM_NAME/crontab.root
-      sudo crontab -u root $RANDOM_NAME/crontab.root
-  fi
-
-  # Install the www-data cron, which calls check_cache_now.sh every minute.
-
-  # NOTE: Not configuring on dev machines. Just branch-mgr and production.
-  if [[ $isbranchmgr -ne 0 || $isprodserver -ne 0 ]]; then
-    m4 \
-      $ccp_m4_defines \
-      ${AO_TEMPLATE_BASE}/${CCPDEV_PSQL_TARGET}/etc/cron.d/crontab.www-data \
-        > $RANDOM_NAME/crontab.www-data
-      sudo crontab -u www-data $RANDOM_NAME/crontab.www-data
-  fi
-
-  # Cleanup.
-  /bin/rm -rf $RANDOM_NAME
-
-  echo "ok"
-
-fi
+} # end: install_cronjobs
+install_cronjobs
 
 # *** Configuring boot services
 
-#$ ll /etc/rc0.d/ | grep cyclopath
-# K01cyclopath-routed -> ../init.d/cyclopath-routed*
-#$ ll /etc/rc1.d/ | grep cyclopath
-# K01cyclopath-routed -> ../init.d/cyclopath-routed*
-#$ ll /etc/rc2.d/ | grep cyclopath
-# S99cyclopath-routed -> ../init.d/cyclopath-routed*
-#$ ll /etc/rc3.d/ | grep cyclopath
-# S99cyclopath-routed -> ../init.d/cyclopath-routed*
-#$ ll /etc/rc4.d/ | grep cyclopath
-# S99cyclopath-routed -> ../init.d/cyclopath-routed*
-#$ ll /etc/rc5.d/ | grep cyclopath
-# S99cyclopath-routed -> ../init.d/cyclopath-routed*
-#$ ll /etc/rc6.d/ | grep cyclopath
-# K01cyclopath-routed -> ../init.d/cyclopath-routed*
+function configure_boot_services () {
 
-# FIXME: Should we do this on all dev machines?
-if [[ $isbranchmgr -ne 0 || $isprodserver -ne 0 ]]; then
+  #$ ll /etc/rc0.d/ | grep cyclopath
+  # K01cyclopath-routed -> ../init.d/cyclopath-routed*
+  #$ ll /etc/rc1.d/ | grep cyclopath
+  # K01cyclopath-routed -> ../init.d/cyclopath-routed*
+  #$ ll /etc/rc2.d/ | grep cyclopath
+  # S99cyclopath-routed -> ../init.d/cyclopath-routed*
+  #$ ll /etc/rc3.d/ | grep cyclopath
+  # S99cyclopath-routed -> ../init.d/cyclopath-routed*
+  #$ ll /etc/rc4.d/ | grep cyclopath
+  # S99cyclopath-routed -> ../init.d/cyclopath-routed*
+  #$ ll /etc/rc5.d/ | grep cyclopath
+  # S99cyclopath-routed -> ../init.d/cyclopath-routed*
+  #$ ll /etc/rc6.d/ | grep cyclopath
+  # K01cyclopath-routed -> ../init.d/cyclopath-routed*
 
-  echo -n "Copying init.d scripts... "
+  # FIXME: Should we do this on all dev machines?
+  if [[ $isbranchmgr -ne 0 || $isprodserver -ne 0 ]]; then
 
-  if [[ "`cat /proc/version | grep Ubuntu`" ]]; then
-    # echo Ubuntu!
-    m4 \
-      $ccp_m4_defines \
-      ${AO_TEMPLATE_BASE}/${CCPDEV_PSQL_TARGET}/etc/init.d/cyclopath-routed \
-      > /tmp/cyclopath-routed
-    sudo mv -f /tmp/cyclopath-routed /etc/init.d/
-    sudo chmod 755 /etc/init.d/cyclopath-routed
-    sudo chown root /etc/init.d/cyclopath-routed
-    sudo chgrp root /etc/init.d/cyclopath-routed
-    sudo update-rc.d cyclopath-routed defaults
-    # /etc/rc0.d/K20cyclopath-routed -> ../init.d/cyclopath-routed
-    # /etc/rc1.d/K20cyclopath-routed -> ../init.d/cyclopath-routed
-    # /etc/rc6.d/K20cyclopath-routed -> ../init.d/cyclopath-routed
-    # /etc/rc2.d/S20cyclopath-routed -> ../init.d/cyclopath-routed
-    # /etc/rc3.d/S20cyclopath-routed -> ../init.d/cyclopath-routed
-    # /etc/rc4.d/S20cyclopath-routed -> ../init.d/cyclopath-routed
-    # /etc/rc5.d/S20cyclopath-routed -> ../init.d/cyclopath-routed
-    #
-    m4 \
-      $ccp_m4_defines \
-      ${AO_TEMPLATE_BASE}/${CCPDEV_PSQL_TARGET}/etc/init.d/cyclopath-mr_do \
-      > /tmp/cyclopath-mr_do
-    sudo mv -f /tmp/cyclopath-mr_do /etc/init.d/
-    sudo chmod 755 /etc/init.d/cyclopath-mr_do
-    sudo chown root /etc/init.d/cyclopath-mr_do
-    sudo chgrp root /etc/init.d/cyclopath-mr_do
-    sudo update-rc.d cyclopath-mr_do defaults
-    echo "ok."
-  elif [[ "`cat /proc/version | grep Red\ Hat`" ]]; then
-    # echo Red Hat!
-    echo "failed."
-    echo
-    echo "Error: FIXME: setup startup scripts for Fedora."
-  else
-    echo "failed."
-    echo
-    echo "Error: Unknown OS!"
-    exit 1
+    echo -n "Copying init.d scripts... "
+
+    if [[ "`cat /proc/version | grep Ubuntu`" ]]; then
+      # echo Ubuntu!
+      m4 \
+        $ccp_m4_defines \
+        ${AO_TEMPLATE_BASE}/${CCPDEV_PSQL_TARGET}/etc/init.d/cyclopath-routed \
+        > /tmp/cyclopath-routed
+      sudo mv -f /tmp/cyclopath-routed /etc/init.d/
+      sudo chmod 755 /etc/init.d/cyclopath-routed
+      sudo chown root /etc/init.d/cyclopath-routed
+      sudo chgrp root /etc/init.d/cyclopath-routed
+      sudo update-rc.d cyclopath-routed defaults
+      # /etc/rc0.d/K20cyclopath-routed -> ../init.d/cyclopath-routed
+      # /etc/rc1.d/K20cyclopath-routed -> ../init.d/cyclopath-routed
+      # /etc/rc6.d/K20cyclopath-routed -> ../init.d/cyclopath-routed
+      # /etc/rc2.d/S20cyclopath-routed -> ../init.d/cyclopath-routed
+      # /etc/rc3.d/S20cyclopath-routed -> ../init.d/cyclopath-routed
+      # /etc/rc4.d/S20cyclopath-routed -> ../init.d/cyclopath-routed
+      # /etc/rc5.d/S20cyclopath-routed -> ../init.d/cyclopath-routed
+      #
+      m4 \
+        $ccp_m4_defines \
+        ${AO_TEMPLATE_BASE}/${CCPDEV_PSQL_TARGET}/etc/init.d/cyclopath-mr_do \
+        > /tmp/cyclopath-mr_do
+      sudo mv -f /tmp/cyclopath-mr_do /etc/init.d/
+      sudo chmod 755 /etc/init.d/cyclopath-mr_do
+      sudo chown root /etc/init.d/cyclopath-mr_do
+      sudo chgrp root /etc/init.d/cyclopath-mr_do
+      sudo update-rc.d cyclopath-mr_do defaults
+      echo "ok."
+    elif [[ "`cat /proc/version | grep Red\ Hat`" ]]; then
+      # echo Red Hat!
+      echo "failed."
+      echo
+      echo "Error: FIXME: setup startup scripts for Fedora."
+    else
+      echo "failed."
+      echo
+      echo "Error: Unknown OS!"
+      exit 1
+    fi
+
   fi
 
-fi
+} # end: configure_boot_services
+configure_boot_services
 
 # *** Configuring logcheck
 
-if [[ $MACHINE_DOMAIN == "cs.umn.edu" ]]; then
+function configure_logcheck () {
 
-  # logcheck needs to be in the www-data group.
-  # You can run 'groups logcheck' to verify.
-  #   $ groups logcheck
-  #   logcheck : logcheck adm www-data
+  if [[ $MACHINE_DOMAIN == "cs.umn.edu" ]]; then
 
-  sudo adduser logcheck www-data > /dev/null
+    # logcheck needs to be in the www-data group.
+    # You can run 'groups logcheck' to verify.
+    #   $ groups logcheck
+    #   logcheck : logcheck adm www-data
 
-  # Verify: `groups logcheck | grep www-data`
+    sudo adduser logcheck www-data > /dev/null
 
-  # NOTE: The files under /etc/logcheck are initially owned by root and belong to
-  # the logcheck group. But we change ownership so the user can edit these (and
-  # maybe so logcheck can run with the user's permissions?).
+    # Verify: `groups logcheck | grep www-data`
 
-  sudo ${SCRIPT_DIR}/../../util/fixperms.pl --public \
-    /etc/logcheck/ \
-    > /dev/null 2>&1
-  sudo chown -R $targetuser /etc/logcheck
-  sudo chgrp -R $targetgroup /etc/logcheck
+    # NOTE: The files under /etc/logcheck are initially owned by root and belong to
+    # the logcheck group. But we change ownership so the user can edit these (and
+    # maybe so logcheck can run with the user's permissions?).
 
-  # Copy the logcheck configuration file.
-  #
-  # We've only edited one variable, SENDMAILTO.
+    sudo ${SCRIPT_DIR}/../../util/fixperms.pl --public \
+      /etc/logcheck/ \
+      > /dev/null 2>&1
+    sudo chown -R $targetuser /etc/logcheck
+    sudo chgrp -R $targetgroup /etc/logcheck
 
-  if [[ $isbranchmgr -ne 0 ]]; then
+    # Copy the logcheck configuration file.
+    #
+    # We've only edited one variable, SENDMAILTO.
 
-    m4 \
-      $ccp_m4_defines \
-      ${AO_TEMPLATE_BASE}/${CCPDEV_PSQL_TARGET}/etc/logcheck/logcheck.conf.USER \
-      > /etc/logcheck/logcheck.conf
+    if [[ $isbranchmgr -ne 0 ]]; then
 
-  elif [[ $isprodserver -ne 0 ]]; then
+      m4 \
+        $ccp_m4_defines \
+        ${AO_TEMPLATE_BASE}/${CCPDEV_PSQL_TARGET}/etc/logcheck/logcheck.conf.USER \
+        > /etc/logcheck/logcheck.conf
 
-    m4 \
-      $ccp_m4_defines \
-     ${AO_TEMPLATE_BASE}/${CCPDEV_PSQL_TARGET}/etc/logcheck/logcheck.conf.PRODUCTION \
-      > /etc/logcheck/logcheck.conf
+    elif [[ $isprodserver -ne 0 ]]; then
+
+      m4 \
+        $ccp_m4_defines \
+       ${AO_TEMPLATE_BASE}/${CCPDEV_PSQL_TARGET}/etc/logcheck/logcheck.conf.PRODUCTION \
+        > /etc/logcheck/logcheck.conf
+
+    fi
+
+    # Copy the list of logfiles to monitor and the logcheck rules.
+    #
+    # See /usr/share/doc/logcheck-database/README.logcheck-database.gz for hints on
+    # how to write, test and maintain rules.
+
+    if [[ $isbranchmgr -ne 0 || $isprodserver -ne 0 ]]; then
+
+      cp -f \
+        ${AO_TEMPLATE_BASE}/${CCPDEV_PSQL_TARGET}/etc/logcheck/logcheck.logfiles \
+        /etc/logcheck/logcheck.logfiles
+
+      cp -f \
+        ${AO_TEMPLATE_BASE}/${CCPDEV_PSQL_TARGET}/etc/logcheck/ignore.d.server/local-CYCLOPATH \
+        /etc/logcheck/ignore.d.server/local-CYCLOPATH
+
+    fi
+
+    sudo ${SCRIPT_DIR}/../../util/fixperms.pl --public \
+      /etc/logcheck/ \
+      > /dev/null 2>&1
+    sudo chown -R $targetuser /etc/logcheck
+    sudo chgrp -R $targetgroup /etc/logcheck
 
   fi
 
-  # Copy the list of logfiles to monitor and the logcheck rules.
-  #
-  # See /usr/share/doc/logcheck-database/README.logcheck-database.gz for hints on
-  # how to write, test and maintain rules.
-
-  if [[ $isbranchmgr -ne 0 || $isprodserver -ne 0 ]]; then
-
-    cp -f \
-      ${AO_TEMPLATE_BASE}/${CCPDEV_PSQL_TARGET}/etc/logcheck/logcheck.logfiles \
-      /etc/logcheck/logcheck.logfiles
-
-    cp -f \
-      ${AO_TEMPLATE_BASE}/${CCPDEV_PSQL_TARGET}/etc/logcheck/ignore.d.server/local-CYCLOPATH \
-      /etc/logcheck/ignore.d.server/local-CYCLOPATH
-
-  fi
-
-  sudo ${SCRIPT_DIR}/../../util/fixperms.pl --public \
-    /etc/logcheck/ \
-    > /dev/null 2>&1
-  sudo chown -R $targetuser /etc/logcheck
-  sudo chgrp -R $targetgroup /etc/logcheck
-
-fi
+} # end: configure_logcheck
+configure_logcheck
 
 # FIXME: Daemons are not starting. Must be PYTHONPATH?
 
@@ -1168,46 +1198,52 @@ fi
 
 # *** Start the work queue daemon.
 
-# FIXME: Make these optional?
-if false; then
+function start_the_work_queue_daemon () {
 
-  # FIXME: Stop the services first?
+  # FIXME: Make these optional?
+  if false; then
 
-  echo -n "Starting the work queue... "
-  cd /ccp/dev/cp/services
-  sudo -u $httpd_user \
-    INSTANCE=minnesota \
-    PYTHONPATH=$ccp_python_path \
-    PYSERVER_HOME=/ccp/dev/cp/pyserver \
-    ./mr_doctl start
-  echo "ok"
+    # FIXME: Stop the services first?
 
-  # *** Start the route-finders.
+    echo -n "Starting the work queue... "
+    cd /ccp/dev/cp/services
+    sudo -u $httpd_user \
+      INSTANCE=minnesota \
+      PYTHONPATH=$ccp_python_path \
+      PYSERVER_HOME=/ccp/dev/cp/pyserver \
+      ./mr_doctl start
+    echo "ok"
 
-  echo -n "Starting the p1 route-finder... "
-  cd /ccp/dev/cp/services
-  sudo -u $httpd_user \
-    INSTANCE=minnesota \
-    PYTHONPATH=$ccp_python_path \
-    PYSERVER_HOME=/ccp/dev/cp/pyserver \
-    ./routedctl --routed_pers=p1 --purpose=general start
-  echo "ok"
+    # *** Start the route-finders.
 
-  #
+    echo -n "Starting the p1 route-finder... "
+    cd /ccp/dev/cp/services
+    sudo -u $httpd_user \
+      INSTANCE=minnesota \
+      PYTHONPATH=$ccp_python_path \
+      PYSERVER_HOME=/ccp/dev/cp/pyserver \
+      ./routedctl --routed_pers=p1 --purpose=general start
+    echo "ok"
 
-  echo -n "Starting the p2 route-finder... "
-  cd /ccp/dev/cp/services
-  sudo -u www-data \
-    INSTANCE=minnesota \
-    PYTHONPATH=$ccp_python_path \
-    PYSERVER_HOME=/ccp/dev/cp/pyserver \
-    ./routedctl --routed_pers=p2 --purpose=general start
-  echo "ok"
+    #
 
-fi
+    echo -n "Starting the p2 route-finder... "
+    cd /ccp/dev/cp/services
+    sudo -u www-data \
+      INSTANCE=minnesota \
+      PYTHONPATH=$ccp_python_path \
+      PYSERVER_HOME=/ccp/dev/cp/pyserver \
+      ./routedctl --routed_pers=p2 --purpose=general start
+    echo "ok"
+
+  fi
+
+} # end: start_the_work_queue_daemon
+start_the_work_queue_daemon
 
 # *** Restore location
 
+# MAYBE: Switch to pushd's above.
 cd $script_path
 
 # *** All done!

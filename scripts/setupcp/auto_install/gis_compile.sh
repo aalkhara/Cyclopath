@@ -24,7 +24,6 @@ set -e
 
 #script_relbase=$(dirname $0)
 #script_absbase=`pwd $script_relbase`
-echo "SCRIPT_DIR=\$(dirname \$(readlink -f $0))"
 SCRIPT_DIR=$(dirname $(readlink -f $0))
 
 # SYNC_ME: This block of code is shared.
@@ -1106,9 +1105,11 @@ function setup_install_rtree () {
   pushd Rtree-${RTREE_VERS} &> /dev/null
 
   echo "[easy_install]
-  install_dir=/ccp/opt/usr/lib/$PYTHONVERS2/site-packages
-  " >> /ccp/opt/.downloads/Rtree-${RTREE_VERS}/setup.cfg
+install_dir=/ccp/opt/usr/lib/$PYTHONVERS2/site-packages
+" >> /ccp/opt/.downloads/Rtree-${RTREE_VERS}/setup.cfg
+
   LD_LIBRARY_PATH=/ccp/opt/usr/lib python setup.py build
+
   LD_LIBRARY_PATH=/ccp/opt/usr/lib python setup.py install
 
   popd &> /dev/null
@@ -1193,15 +1194,25 @@ function setup_install_servable () {
   echo "Installing servable"
 
   pushd /ccp/opt/.downloads &> /dev/null
-  if [[ -d /ccp/opt/.downloads/servable_trunk ]]; then
-    pushd servable_trunk &> /dev/null
-    svn update
-    popd &> /dev/null
-  else
-    svn checkout http://servable.googlecode.com/svn/trunk/ servable_trunk
-    pushd servable_trunk &> /dev/null
-    popd &> /dev/null
-  fi
+  
+  #if [[ -d /ccp/opt/.downloads/servable_trunk ]]; then
+  #  pushd servable_trunk &> /dev/null
+  #  svn update
+  #else
+    # 2016-07-18:
+    #  svn checkout http://servable.googlecode.com/svn/trunk/ servable_trunk
+    #  svn: E170013: Unable to connect to a repository at URL 'http://servable.googlecode.com/svn/trunk'
+    #  svn: E160013: '/svn/trunk' path not found
+    #
+    wget -O servable_source-archive.zip -N \
+      https://storage.googleapis.com/google-code-archive-source/v2/code.google.com/servable/source-archive.zip
+    /bin/rm -rf /ccp/opt/.downloads/servable_trunk
+    /bin/rm -rf /ccp/opt/.downloads/servable_trunk-TBD
+    unzip servable_source-archive.zip -d servable_trunk-TBD
+    mv servable_trunk-TBD/servable servable_trunk
+    rmdir servable_trunk-TBD
+    pushd servable_trunk/trunk &> /dev/null
+  #fi
 
   # Setup fails if this directory isn't available, so make sure it is.
   mkdir -p /ccp/opt/usr/lib/python/
@@ -1213,6 +1224,7 @@ function setup_install_servable () {
 
   python setup.py install --home=/ccp/opt/usr
 
+  popd &> /dev/null
   popd &> /dev/null
 
 } # end: setup_install_servable
@@ -1250,17 +1262,33 @@ function setup_install_pytz () {
   fi
 
   pushd /ccp/opt/.downloads &> /dev/null
+
   # See above: certificate problem.
   #wget -N $PYDOWNLOAD
   wget --no-check-certificate -N $PYDOWNLOAD
+
   # 2013.01.24: You might have a problem if there are multiple easy_install
   # binaries installed: you might want to always use the one for the right
   # version of Python.
   #easy_install --prefix=/ccp/opt/usr \
   #easy_install-${PYTHONNUMB} --prefix=/ccp/opt/usr \
   #  pytz-2011g-py${PYTHONNUMB}.egg
-  easy_install-${PYTHONNUMB} --prefix=/ccp/opt/usr \
-    pytz-2013.7-py${PYTHONNUMB}.egg
+  # 2016-07-19: Ubuntu 16.04: Just /usr/bin/easy_install and easy_install3.
+  # There's a dist-packages .py version tut that fails.
+  #   $ /usr/lib/python2.7/dist-packages/easy_install.py \
+  #       --prefix=/ccp/opt/usr \
+  #       pytz-2013.7-py${PYTHONNUMB}.egg
+  #   -bash: /usr/lib/python2.7/dist-packages/easy_install.py: Permission denied
+  command -v easy_install-${PYTHONNUMB} > /dev/null
+  if [[ $? -eq 0 ]]; then
+    easy_install-${PYTHONNUMB} \
+      --prefix=/ccp/opt/usr \
+      pytz-2013.7-py${PYTHONNUMB}.egg
+  else
+    easy_install \
+      --prefix=/ccp/opt/usr \
+      pytz-2013.7-py${PYTHONNUMB}.egg
+  fi
 
   # Skipping: Python nose for itamae
   #
@@ -1500,6 +1528,12 @@ function setup_install_python_twitter () {
   # References:
   #   https://github.com/bear/python-twitter
 
+  # 2016-07-19:
+  #   Installed /ccp/opt/usr/lib/python2.7/site-packages/requests_oauthlib-0.6.2-py2.7.egg
+  #   error: The 'requests' distribution was not found and is required by python-twitter
+  # https://github.com/kennethreitz/requests/
+  pip2 install requests
+
   pushd /ccp/opt/.downloads &> /dev/null
   if ! [[ -d /ccp/opt/.downloads/python-twitter ]]; then
     git clone https://github.com/bear/python-twitter.git
@@ -1556,6 +1590,7 @@ function setup_install_networkx () {
   fi
 
   pushd /ccp/opt/.downloads &> /dev/null
+
   # 2013.06.25: FIXME: What's this all about?:
   #    pee@pluto:.downloads$ wget -N https://pypi.python.org/packages/2.7/n
   #                                   /networkx/networkx-1.7-py2.7.egg
@@ -1569,8 +1604,14 @@ function setup_install_networkx () {
   #wget -N $PYDOWNLOAD
   wget --no-check-certificate -N $PYDOWNLOAD
 
-  easy_install-${PYTHONNUMB} --prefix=/ccp/opt/usr \
-    networkx-${NETWORKX_VERS}-py${PYTHONNUMB}.egg
+  command -v easy_install-${PYTHONNUMB} > /dev/null
+  if [[ $? -eq 0 ]]; then
+    easy_install-${PYTHONNUMB} --prefix=/ccp/opt/usr \
+      networkx-${NETWORKX_VERS}-py${PYTHONNUMB}.egg
+  else
+    easy_install --prefix=/ccp/opt/usr \
+      networkx-${NETWORKX_VERS}-py${PYTHONNUMB}.egg
+  fi
 
   # Apply the patch for the Cyclopath p3 planner:
   # change astar to be able to call edge weight fcn.
@@ -1591,75 +1632,73 @@ function setup_install_networkx () {
 # SYNC_ME: Update download link below.
 NUMPY_VERS='1.11.1'
 
-# - Has some interesting math functions.
-# Originally, just used for testing TSP code.
-# But since 2013 some Cyclopath devs use NumPy and SciPy for research.
-#
-
-# Don't do this: It conflicts with apt-get's scipy:
-
-__install_numpy__ () {
-
-  echo
-  echo "Installing NumPy"
-
-  # http://scipy.org/NumPy
-
-  # Note that numpy is part of the distro but it's probably aged.
-
-  pushd /ccp/opt/.downloads &> /dev/null
-
-  # wget \
-  #  -N http://sourceforge.net/projects/numpy/files/NumPy/1.7.0/numpy-1.7.0.tar.gz/download \
-  #  -O numpy-1.7.0.tar.gz
-  #wget \
-  #  -N "http://downloads.sourceforge.net/project/numpy/NumPy/1.8.0/numpy-1.8.0.tar.gz?r=http%3A%2F%2Fsourceforge.net%2Fprojects%2Fnumpy%2Ffiles%2FNumPy%2F1.7.2%2F&ts=1394309689&use_mirror=iweb" \
-  #  -O numpy-1.8.0.tar.gz
-  wget \
-    -N "http://downloads.sourceforge.net/project/numpy/NumPy/1.11.1/numpy-1.11.1.tar.gz?r=https%3A%2F%2Fsourceforge.net%2Fprojects%2Fnumpy%2Ffiles%2F&ts=1468875011&use_mirror=jaist" \
-    -O numpy-1.11.1.tar.gz
-
-  /bin/rm -rf /ccp/opt/.downloads/numpy-1.8.0
-  /bin/rm -rf /ccp/opt/.downloads/numpy-1.11.1
-  /bin/rm -rf /ccp/opt/.downloads/numpy-${NUMPY_VERS}
-
-  tar -xvzf numpy-${NUMPY_VERS}.tar.gz \
-    > /dev/null
-
-  pushd /ccp/opt/.downloads/numpy-${NUMPY_VERS} &> /dev/null
-
-  python setup.py build --fcompiler=gnu95
-
-  python setup.py install \
-    --prefix=/ccp/opt/usr
-
-  # To test:
-  #
-  #   $ python
-  #
-  #   > import numpy
-  #   > numpy.test()
-  #   > numpy.__version__
-
-  popd &> /dev/null
-  popd &> /dev/null
-}
-
-__dev_stall_scipy_etc__ () {
-  sudo apt-get install \
-    python-numpy \
-    python-scipy \
-    python-matplotlib \
-    ipython \
-    ipython-notebook \
-    python-pandas \
-    python-sympy \
-    python-nose
-}
-
 function setup_install_numpy () {
 
-  :
+  # - Has some interesting math functions.
+  # Originally, just used for testing TSP code.
+  # But since 2013 some Cyclopath devs use NumPy and SciPy for research.
+  #
+
+  # Don't do this: It conflicts with apt-get's scipy:
+
+  __install_numpy__ () {
+
+    echo
+    echo "Installing NumPy"
+
+    # http://scipy.org/NumPy
+
+    # Note that numpy is part of the distro but it's probably aged.
+
+    pushd /ccp/opt/.downloads &> /dev/null
+
+    # wget \
+    #  -N http://sourceforge.net/projects/numpy/files/NumPy/1.7.0/numpy-1.7.0.tar.gz/download \
+    #  -O numpy-1.7.0.tar.gz
+    #wget \
+    #  -N "http://downloads.sourceforge.net/project/numpy/NumPy/1.8.0/numpy-1.8.0.tar.gz?r=http%3A%2F%2Fsourceforge.net%2Fprojects%2Fnumpy%2Ffiles%2FNumPy%2F1.7.2%2F&ts=1394309689&use_mirror=iweb" \
+    #  -O numpy-1.8.0.tar.gz
+    wget \
+      -N "http://downloads.sourceforge.net/project/numpy/NumPy/1.11.1/numpy-1.11.1.tar.gz?r=https%3A%2F%2Fsourceforge.net%2Fprojects%2Fnumpy%2Ffiles%2F&ts=1468875011&use_mirror=jaist" \
+      -O numpy-1.11.1.tar.gz
+
+    /bin/rm -rf /ccp/opt/.downloads/numpy-1.8.0
+    /bin/rm -rf /ccp/opt/.downloads/numpy-1.11.1
+    /bin/rm -rf /ccp/opt/.downloads/numpy-${NUMPY_VERS}
+
+    tar -xvzf numpy-${NUMPY_VERS}.tar.gz \
+      > /dev/null
+
+    pushd /ccp/opt/.downloads/numpy-${NUMPY_VERS} &> /dev/null
+
+    python setup.py build --fcompiler=gnu95
+
+    python setup.py install \
+      --prefix=/ccp/opt/usr
+
+    # To test:
+    #
+    #   $ python
+    #
+    #   > import numpy
+    #   > numpy.test()
+    #   > numpy.__version__
+
+    popd &> /dev/null
+    popd &> /dev/null
+  }
+
+  __dev_stall_scipy_etc__ () {
+    sudo apt-get install \
+      python-numpy \
+      python-scipy \
+      python-matplotlib \
+      ipython \
+      ipython-notebook \
+      python-pandas \
+      python-sympy \
+      python-nose
+  }
 
 } # end: setup_install_numpy
 
@@ -1669,6 +1708,7 @@ function setup_install_numpy () {
 #             Why have we been punishing ourselves with OGR?
 
 #FIONA_VERS='1.1.4'
+# SYNC_ME: Update wget http addy below.
 FIONA_VERS='1.7.0.post2'
 
 function setup_install_fiona () {
@@ -1679,6 +1719,8 @@ function setup_install_fiona () {
     echo "Installing Fiona"
 
     # https://pypi.python.org/pypi/Fiona
+
+    # 2016-07-19: Says we need libgdal1-dev. That's new. I think.
 
     # Note that Fiona is not part of the Debian repositories.
 
@@ -1697,8 +1739,10 @@ function setup_install_fiona () {
 
     # NOTE: From a dev. machine, --no-check-certificate doesn't seem to be
     #       necessary. Only on the CS machines.
+    #wget --no-check-certificate -N \
+    #  https://pypi.python.org/packages/source/F/Fiona/Fiona-${FIONA_VERS}.tar.gz
     wget --no-check-certificate -N \
-      https://pypi.python.org/packages/source/F/Fiona/Fiona-${FIONA_VERS}.tar.gz
+      https://pypi.python.org/packages/14/7e/e8c5de6431d66bbb99e23aa72bf110b9f0157198dfe13e9e792341cfc65d/Fiona-1.7.0.post2.tar.gz#md5=e286a765cf1053e1c08b202928ee9312
 
     /bin/rm -rf /ccp/opt/.downloads/Fiona-1.1.4
     /bin/rm -rf /ccp/opt/.downloads/Fiona-1.7.0.post2
@@ -1720,14 +1764,43 @@ function setup_install_fiona () {
     #      --prefix=/ccp/opt/usr \
     #      install
 
-    # Install just for Ccp:
+    # Install just for Ccp.
+
+    # 2016-07-19: Another one needs its nappy changed.
+    # I guessed at the --gdalversion param (cannot get
+    # py2 setup.py --help to help) and I think it worked...
+    #
+    # WARNING:root:Failed to get options via gdal-config: [Errno 2] No such file or directory
+    # Traceback (most recent call last):
+    #   File "setup.py", line 193, in <module>
+    #     if gdalversion.startswith("1"):
+    # NameError: name 'gdalversion' is not defined
+
     python setup.py \
       build_ext \
       -I/ccp/opt/gdal/include \
       -L/ccp/opt/gdal/lib \
-      -lgdal
+      -lgdal \
+      --gdalversion ${GDAL_VERS}
 
-    python setup.py install --prefix=/ccp/opt/usr
+    python setup.py install --prefix=/ccp/opt/usr \
+      --gdalversion ${GDAL_VERS}
+
+    # landonb@cs-u-runic:Fiona-1.7.0.post2 ⚓ $ py2
+    #
+    # Python 2.7.12 (default, Jul  1 2016, 15:12:24) 
+    # [GCC 5.4.0 20160609] on linux2
+    # Type "help", "copyright", "credits" or "license" for more information.
+    #
+    # >>> import fiona
+    #
+    # Traceback (most recent call last):
+    #   File "<stdin>", line 1, in <module>
+    #   File "fiona/__init__.py", line 69, in <module>
+    #     from fiona.collection import Collection, BytesCollection, vsi_path
+    #   File "fiona/collection.py", line 7, in <module>
+    #     from fiona.ogrext import Iterator, ItemsIterator, KeysIterator
+    # ImportError: No module named ogrext
 
     popd &> /dev/null
     popd &> /dev/null
@@ -1760,7 +1833,7 @@ function setup_install_levenshtein () {
     # To connect to pypi.python.org insecurely, use '--no-check-certificate'.
     wget --no-check-certificate -N \
       https://pypi.python.org/packages/source/p/python-Levenshtein/python-Levenshtein-${LEVENSHTEIN_VERS}.tar.gz
-    
+
     /bin/rm -rf /ccp/opt/.downloads/python-Levenshtein-0.11.2
     /bin/rm -rf /ccp/opt/.downloads/python-Levenshtein-0.12.0
     /bin/rm -rf /ccp/opt/.downloads/python-Levenshtein-${LEVENSHTEIN_VERS}
@@ -1771,13 +1844,15 @@ function setup_install_levenshtein () {
     pushd python-Levenshtein-${LEVENSHTEIN_VERS} &> /dev/null
 
     python setup.py build
+
     python setup.py install --prefix=/ccp/opt/usr
 
     # https://github.com/joncasdam/python-Levenshtein/blob/master/genextdoc.py
     wget --no-check-certificate \
       https://raw.github.com/joncasdam/python-Levenshtein/master/genextdoc.py
 
-    ./gendoc.sh --selfcontained
+    # FIXME: 2016-07-19: Where'd gendoc.sh go?
+    #./gendoc.sh --selfcontained
 
     # In your Web browser:
     #  file:///ccp/opt/.downloads/python-Levenshtein-0.11.2/
@@ -1814,13 +1889,17 @@ function setup_install_swfobject () {
   pushd /ccp/opt/.downloads &> /dev/null
 
   #wget -N https://swfobject.googlecode.com/files/swfobject_${SWFOBJECT_VERS}.zip
-  wget -N https://github.com/swfobject/swfobject/archive/${SWFOBJECT_VERS}.tar.gz
+  #unzip swfobject_${SWFOBJECT_VERS}.zip -d /ccp/opt/.downloads/swfobject_${SWFOBJECT_VERS}
+
+  wget -O swfobject_${SWFOBJECT_VERS}.tar.gz \
+    -N https://github.com/swfobject/swfobject/archive/${SWFOBJECT_VERS}.tar.gz
 
   /bin/rm -rf /ccp/opt/.downloads/swfobject_2_2
   /bin/rm -rf /ccp/opt/.downloads/swfobject_2.2
   /bin/rm -rf /ccp/opt/.downloads/swfobject_${SWFOBJECT_VERS}
 
-  unzip swfobject_${SWFOBJECT_VERS}.zip -d /ccp/opt/.downloads/swfobject_${SWFOBJECT_VERS}
+  tar xvzf swfobject_${SWFOBJECT_VERS}.tar.gz
+  # FIXME: Do now what?
 
   popd &> /dev/null
 
@@ -2131,7 +2210,7 @@ function setup_fix_permissions () {
   if [[ -n "$MODULESHOME" ]]; then
     module load soft/gcc/4.5.2
   fi
-}
+} # end: setup_fix_permissions
 
 function gis_compile_main () {
 
@@ -2204,41 +2283,65 @@ function gis_compile_main () {
   # 0.00 mins. [no-op]
   time_run setup_install_xerces
 
-# Failed in 0.79 mins.
+  # 2016-07-18: 1.09 mins.
   time_run setup_install_mapserver
 
+  # 0.00 mins. [just a cgi script.]
   time_run setup_install_tilecache
 
+  # 2016-07-18: 1.95 mins.
   time_run setup_install_spatialindex
 
+  # 2016-07-18: 0.02 mins.
   time_run setup_install_rtree
 
+  # 2016-07-18: 0.03 mins.
   time_run setup_install_simplejson
 
+  # 2016-07-19: Quickie mins.
   time_run setup_install_servable
 
+  # 2016-07-19: easy_peasy_installsy.
   time_run setup_install_pytz
 
+# FIXME: FAILED. I think. 2016-07-19: The installer finished but midway through is this:
+#
+#   hashtable/hashtable_itr.h:41:1: note: previous definition of ‘hashtable_iterator_value’ was here
+#    hashtable_iterator_value(struct hashtable_itr *i)
+#    ^
+#   Makefile:56: recipe for target 'hashtable/hashtable_itr.o' failed
+#   make: *** [hashtable/hashtable_itr.o] Error 1
+#
+# GraphServer is just for routed_p2 (multimodal) so I'm going to ignore this for now.
   time_run setup_install_graphserver
 
+  # 2016-07-18: 0.47 mins.
   time_run setup_install_libyaml
 
+  # 2016-07-18: 0.05 mins.
   time_run setup_install_oath
 
   time_run setup_install_python_twitter
 
   time_run setup_install_networkx
 
+  # 0.00 mins. [no-op]
   time_run setup_install_numpy
 
   time_run setup_install_fiona
 
   time_run setup_install_levenshtein
 
+# Last-modified header missing -- time-stamps turned off.
+# 2016-07-18 23:01:13 (735 KB/s) - ‘2.2.tar.gz’ saved [44716]
+#
+# unzip:  cannot find or open swfobject_2.2.zip, swfobject_2.2.zip.zip or swfobject_2.2.zip.ZIP.
   time_run setup_install_swfobject
 
+  # 0.05 mins. [just some dumb docs]
   time_run setup_install_QSopt
 
+  # 0.00 mins. [blank]
   time_run setup_install_CPLEX
 
   # FIXME: Concorder web site offline.

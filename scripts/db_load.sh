@@ -117,7 +117,9 @@ elif [[ "$load_style" = "v2" ]]; then
   # 2013.10.31: Still on pgsq 8.4 but now on pgis 2.0.
   # BUG nnnn: Postgres 9.0 and PostGIS 2.1, which is complains if not >= 9.
 
-  if [[ $POSTGIS_MAJOR_VERSION -eq 2 && $POSTGIS_MINOR_VERSION -eq 0 ]]; then
+  if [[ $POSTGIS_MAJOR_VERSION -eq 2 \
+    && ($POSTGIS_MINOR_VERSION -eq 0 || $POSTGIS_MINOR_VERSION -eq 1) \
+  ]]; then
 
     # PostGIS 2.x is markedly different than 1.x. In 1.x, we just called
     # the postgis_restore script; in 2.x, we created the database ourselves
@@ -161,6 +163,10 @@ elif [[ "$load_style" = "v2" ]]; then
 else
 
   echo "ERROR: Unknown option '$load_style'"
+  echo
+  echo "DEV: Edit db_load.sh. Looks like you installed a probably newer postgis than we've seen."
+  # 2016-07-19: [lb] hit here on using postgix 2.1 for the first time
+  #             but thankfully it works just like 2.0.
   exit 1
 
 fi
@@ -204,7 +210,9 @@ if [[ -n "$CMD_CREATE" ]]; then
   eval $CMD_CREATE
 fi
 
-if [[ $POSTGIS_MAJOR_VERSION -eq 2 && $POSTGIS_MINOR_VERSION -eq 0 ]]; then
+if [[ $POSTGIS_MAJOR_VERSION -eq 2 \
+  && ($POSTGIS_MINOR_VERSION -eq 0 || $POSTGIS_MINOR_VERSION -eq 1) \
+]]; then
 
   # From: http://www.postgis.org/documentation/manual-svn/postgis_installation.html#create_new_db
   #  and: http://www.postgis.org/documentation/manual-svn/postgis_installation.html#create_new_db_extensions
